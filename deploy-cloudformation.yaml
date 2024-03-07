@@ -1,0 +1,90 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: A Lambda
+Parameters:
+  projName:
+    Type: String
+    Default: Pigeon
+  apiGatewayStageName:
+    Type: String
+    AllowedPattern: '[a-z0-9]+'
+    Default: call
+
+Resources:
+  
+  helloLM:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${projName}SimpleDynamoService' 
+      Handler: src/helloworld_handler.handler
+      Runtime: nodejs18.x
+      Role: !GetAtt MyLambdaRole.Arn
+      Code:
+          S3Bucket: build-lambda-functions
+          S3Key: SimpleLambdaCode
+      TracingConfig:
+        Mode: Active
+  MyLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${projName}LambdaRole' 
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+  DynamoDBMangedPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties: 
+      ManagedPolicyName:  !Sub '${projName}DynamoDBAcccessPolicy'
+      Description: Managed Policy to attach to MyTestRole Role
+      Path: /
+      PolicyDocument: 
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - 'dynamodb:Query'
+              - 'dynamodb:Scan'
+            Resource: '*'
+      Roles: 
+        - !Ref MyLambdaRole
+  
+  apiGateway:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Description: Example API Gateway
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+      Name: !Sub '${projName}ApiGW'
+  apiGatewayRootMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: POST
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS_PROXY
+        Uri: !Sub
+          - arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${lambdaArn}/invocations
+          - lambdaArn: !GetAtt helloLM.Arn
+      ResourceId: !GetAtt apiGateway.RootResourceId
+      RestApiId: !Ref apiGateway
+  apiGatewayDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+      - apiGatewayRootMethod
+    Properties:
+      RestApiId: !Ref apiGateway
+      StageName: !Ref apiGatewayStageName
+  lambdaApiGatewayInvoke:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref helloLM
+      Principal: apigateway.amazonaws.com
+
