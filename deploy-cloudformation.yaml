@@ -15,12 +15,13 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub '${projName}SimpleDynamoService' 
-      Handler: src/helloworld_handler.handler
+      Handler: src/handler.handler
       Runtime: nodejs18.x
       Role: !GetAtt MyLambdaRole.Arn
-      Code:
-          S3Bucket: build-lambda-functions
-          S3Key: SimpleLambdaCode
+      CodeUri: ../
+      #Code:
+      #    S3Bucket: build-lambda-functions
+      #    S3Key: SimpleLambdaCode
       TracingConfig:
         Mode: Active
   MyLambdaRole:
@@ -36,7 +37,7 @@ Resources:
                 - lambda.amazonaws.com
             Action:
               - 'sts:AssumeRole'
-  DynamoDBMangedPolicy:
+  PigeonLambdaPolicy:
     Type: AWS::IAM::ManagedPolicy
     Properties: 
       ManagedPolicyName:  !Sub '${projName}DynamoDBAcccessPolicy'
@@ -49,10 +50,18 @@ Resources:
             Action:
               - 'dynamodb:Query'
               - 'dynamodb:Scan'
-            Resource: '*'
+              - 'logs:CreateLogStream'
+              - 'logs:PutLogEvents'
+            Resource: 
+              - !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${projName}SimpleDynamoService:*
       Roles: 
         - !Ref MyLambdaRole
-  
+  lambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${projName}SimpleDynamoService'
+      RetentionInDays: 3
+
   apiGateway:
     Type: AWS::ApiGateway::RestApi
     Properties:
@@ -61,23 +70,43 @@ Resources:
         Types:
           - REGIONAL
       Name: !Sub '${projName}ApiGW'
+  
+  itemResource:
+    Type: 'AWS::ApiGateway::Resource'
+    Properties:
+      ParentId: !GetAtt apiGateway.RootResourceId
+      RestApiId: !Ref apiGateway
+      PathPart: items
+
+  itemIdResource:
+    Type: 'AWS::ApiGateway::Resource'
+    Properties:
+      ParentId: !Ref itemResource
+      RestApiId: !Ref apiGateway
+      PathPart: '{itemId}'
+
   apiGatewayRootMethod:
     Type: AWS::ApiGateway::Method
     Properties:
       AuthorizationType: NONE
-      HttpMethod: POST
+      HttpMethod: ANY
       Integration:
         IntegrationHttpMethod: POST
+        RequestParameters:
+          integration.request.path.item: method.request.path.item
         Type: AWS_PROXY
         Uri: !Sub
           - arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${lambdaArn}/invocations
           - lambdaArn: !GetAtt helloLM.Arn
-      ResourceId: !GetAtt apiGateway.RootResourceId
+      ResourceId: !Ref itemIdResource
       RestApiId: !Ref apiGateway
+      OperationName: /items
+      RequestParameters:
+        method.request.path.item: false
   apiGatewayDeployment:
     Type: AWS::ApiGateway::Deployment
     DependsOn:
-      - apiGatewayRootMethod
+      - apiGatewayRootMethod  
     Properties:
       RestApiId: !Ref apiGateway
       StageName: !Ref apiGatewayStageName
@@ -88,3 +117,16 @@ Resources:
       FunctionName: !Ref helloLM
       Principal: apigateway.amazonaws.com
 
+  MyDynamoDBTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${projName}_items' 
+      AttributeDefinitions:
+        - AttributeName: ID
+          AttributeType: N
+      KeySchema:
+        - AttributeName: ID
+          KeyType: HASH
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5

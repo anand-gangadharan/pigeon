@@ -11,7 +11,7 @@ const client = new DynamoDBClient({});
 
 const dynamo = DynamoDBDocumentClient.from(client);
 
-const tableName = "http-crud-tutorial-items";
+const tableName = "Pigeon_items";
 
 export const handler = async (event, context) => {
   let body;
@@ -19,53 +19,15 @@ export const handler = async (event, context) => {
   const headers = {
     "Content-Type": "application/json",
   };
-
   try {
-    switch (event.routeKey) {
-      case "DELETE /items/{id}":
-        await dynamo.send(
-          new DeleteCommand({
-            TableName: tableName,
-            Key: {
-              id: event.pathParameters.id,
-            },
-          })
-        );
-        body = `Deleted item ${event.pathParameters.id}`;
-        break;
-      case "GET /items/{id}":
-        body = await dynamo.send(
-          new GetCommand({
-            TableName: tableName,
-            Key: {
-              id: event.pathParameters.id,
-            },
-          })
-        );
-        body = body.Item;
-        break;
-      case "GET /items":
-        body = await dynamo.send(
-          new ScanCommand({ TableName: tableName })
-        );
-        body = body.Items;
-        break;
-      case "PUT /items":
-        let requestJSON = JSON.parse(event.body);
-        await dynamo.send(
-          new PutCommand({
-            TableName: tableName,
-            Item: {
-              id: requestJSON.id,
-              price: requestJSON.price,
-              name: requestJSON.name,
-            },
-          })
-        );
-        body = `Put item ${requestJSON.id}`;
+    console.log("Event ", event)
+    switch (event.resource) {
+      case "/items/{itemId}":
+        body = await processItem(event, body);
         break;
       default:
-        throw new Error(`Unsupported route: "${event.routeKey}"`);
+        throw new Error(`Unsupported resource: "${event.resource}"`);
+        break;
     }
   } catch (err) {
     statusCode = 400;
@@ -80,3 +42,67 @@ export const handler = async (event, context) => {
     headers,
   };
 };
+async function processItem(event, body) {
+  switch (event.httpMethod) {
+    case "GET":
+      await fetch();
+      break;
+    case "DELETE":
+      await remove();
+      break;
+    case "PUT":
+      await create();
+      break;
+    default:
+      throw new Error(`Unsupported http method: "${event.httpMethod}"`);
+  }
+  return body;
+
+  async function create() {
+    let requestJSON = JSON.parse(event.body);
+    await dynamo.send(
+      new PutCommand({
+        TableName: tableName,
+        Item: {
+          id: requestJSON.id,
+          price: requestJSON.price,
+          name: requestJSON.name,
+        },
+      })
+    );
+    body = `Put item ${requestJSON.id}`;
+  }
+
+  async function remove() {
+    await dynamo.send(
+      new DeleteCommand({
+        TableName: tableName,
+        Key: {
+          id: event.pathParameters.itemId,
+        },
+      })
+    );
+    body = `Deleted item ${event.pathParameters.itemId}`;
+  }
+
+  async function fetch() {
+    itemId = event.pathParameters.itemId;
+    if (id) {
+      body = await dynamo.send(
+        new GetCommand({
+          TableName: tableName,
+          Key: {
+            id: itemId,
+          },
+        })
+      );
+      body = body.Item;
+    } else {
+      body = await dynamo.send(
+        new ScanCommand({ TableName: tableName })
+      );
+      body = body.Items;
+    }
+  }
+}
+
