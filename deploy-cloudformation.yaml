@@ -18,10 +18,9 @@ Resources:
       Handler: src/handler.handler
       Runtime: nodejs18.x
       Role: !GetAtt MyLambdaRole.Arn
-      CodeUri: ../
-      #Code:
-      #    S3Bucket: build-lambda-functions
-      #    S3Key: SimpleLambdaCode
+      Code:
+          S3Bucket: build-lambda-functions
+          S3Key: SimpleLambdaCode
       TracingConfig:
         Mode: Active
   MyLambdaRole:
